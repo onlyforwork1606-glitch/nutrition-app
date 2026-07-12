@@ -1,0 +1,49 @@
+name = "nutriai-worker"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database
+[[d1_databases]]
+binding = "DB"
+database_name = "nutriai"
+database_id = "REPLACE_WITH_D1_ID"
+migrations_dir = "migrations"
+
+# R2 bucket for meal / temp images
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "nutriai-images"
+
+# KV for rate-limit counters, sessions cache, magic-link tokens
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_WITH_KV_ID"
+
+# (Optional) Durable Object for per-user coach memory cache
+[[durable_objects.bindings]]
+name = "COACH_DO"
+class_name = "CoachDurable"
+script_name = "nutriai-worker"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["CoachDurable"]
+
+# Background jobs
+[triggers]
+crons = ["0 9 * * 1", "0 9 1 * *"]  # weekly report (Mon 9am), monthly report (1st 9am)
+
+# Secrets (set via: wrangler secret put OPENROUTER_API_KEY)
+# OPENROUTER_API_KEY
+# SESSION_SECRET
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# USDA_API_KEY  (optional)
+# Variables:
+[vars]
+ENVIRONMENT = "production"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+R2_PUBLIC_URL = "https://pub-REPLACE.r2.dev"
+FRONTEND_URL = "https://nutriai.pages.dev"
+GOOGLE_REDIRECT_URI = "https://api.nutriai.app/api/auth/google/callback"

@@ -1,0 +1,14 @@
+# Worker development secrets (wrangler reads this file for `wrangler dev`).
+# Copy to `.dev.vars` and fill in. NEVER commit `.dev.vars`.
+OPENROUTER_API_KEY=sk-or-v1-xxxx
+SESSION_SECRET=generate-with-openssl-rand-hex-32
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=http://localhost:8787/api/auth/google/callback
+USDA_API_KEY=
+
+# Public vars (also set in wrangler.toml [vars])
+ENVIRONMENT=development
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+R2_PUBLIC_URL=http://localhost:8787
+FRONTEND_URL=http://localhost:5173
