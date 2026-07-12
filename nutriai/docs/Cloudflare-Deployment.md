@@ -26,7 +26,7 @@ The D1 schema **self-initializes** on the first request
 (`src/services/db.ts` runs `CREATE TABLE IF NOT EXISTS` for every table), so no
 separate migration step is required at deploy time.
 
-> The Worker name in `wrangler.toml` is `nutriai`. Create the Cloudflare
+> The Worker name in `wrangler.toml` is `nutrition-app`. Create the Cloudflare
 > Workers project with the **same name** to avoid the "Worker name mismatch"
 > warning.
 
@@ -68,7 +68,7 @@ nutriai/                 ← repo root = frontend (Vite PWA)
    | **Compatibility date** | `2024-11-01` |
    | **Compatibility flags** | `nodejs_compat` |
 
-4. **Create the Worker project named `nutriai`** (matches `wrangler.toml`).
+4. **Create the Worker project named `nutrition-app`** (matches `wrangler.toml`).
 
 The Dashboard runs `npm install && npm run build` **inside `worker/`**, which
 builds the frontend into `../dist`, then automatically runs `wrangler deploy`
