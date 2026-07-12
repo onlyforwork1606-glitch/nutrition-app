@@ -11,7 +11,9 @@
 - All responses set `Strict-Transport-Security`, `X-Content-Type-Options`,
   `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a
   `default-src 'none'` CSP (API responses are non-document).
-- CORS allows only the configured `FRONTEND_URL` and credentials.
+- CORS reflects the request Origin. The API and PWA are served from the same
+  Worker origin (single-worker deployment), so cross-origin requests are not
+  used; credentials are allowed for same-origin calls.
 
 ## Authentication
 - Sessions are signed, HttpOnly, Secure, `SameSite=Lax` cookies.
@@ -26,8 +28,9 @@
 - Every outbound OpenRouter call counts against quota, including failures.
 
 ## Data handling
-- Meal images are stored in R2 as **temporary** objects; they are not exposed
-  publicly beyond the R2 public URL and should be purged by a cleanup job.
+- Meal images are stored in R2 as **temporary** objects and served only through
+  the Worker's own authenticated origin (`/api/images/:key`), never via a public
+  R2 URL.
 - Inputs are validated with Zod on the server; AI output is parsed and schema
   checked before use.
 - Soft deletes (`deleted_at`) keep history recoverable without losing refs.

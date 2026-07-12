@@ -43,7 +43,7 @@ export async function complete(
           headers: {
             Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
             "Content-Type": "application/json",
-            "HTTP-Referer": env.FRONTEND_URL,
+            "HTTP-Referer": "https://nutriai.app",
             "X-Title": "NutriAI",
           },
           body: JSON.stringify({

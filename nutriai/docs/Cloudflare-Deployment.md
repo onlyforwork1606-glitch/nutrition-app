@@ -2,18 +2,43 @@
 
 This project deploys as a **single Cloudflare Worker** that serves both the PWA
 (static assets) and the `/api/*` backend. You can deploy it purely from the
-Cloudflare Dashboard by connecting the GitHub repo — **no manual build steps
-and no file copying**.
+Cloudflare Dashboard by connecting the GitHub repo — **no manual editing of
+`wrangler.toml` and no file copying**.
+
+## Why there are no resource IDs in `wrangler.toml`
+
+`wrangler.toml` is the source of truth for a Git deployment, but resource IDs
+(D1 `database_id`, KV `id`) only exist **after** you create the resource. To
+keep the repo commitment-ready and free of placeholders, the following bindings
+are **created and attached in the Cloudflare Dashboard** (not hard-coded):
+
+- **D1** database — binding name `DB`
+- **KV** namespace — binding name `KV`
+
+The bindings that need no ID are already declared in `wrangler.toml`:
+
+- **R2** bucket — `IMAGES` → `nutriai-images` (by `bucket_name`)
+- **Durable Object** — `COACH_DO` (class `CoachDurable`)
+- **Assets** — the built PWA from `../dist`
+- **Cron Triggers** — weekly + monthly reports
+
+The D1 schema **self-initializes** on the first request
+(`src/services/db.ts` runs `CREATE TABLE IF NOT EXISTS` for every table), so no
+separate migration step is required at deploy time.
+
+> The Worker name in `wrangler.toml` is `nutriai`. Create the Cloudflare
+> Workers project with the **same name** to avoid the "Worker name mismatch"
+> warning.
 
 ## Monorepo structure
 
 ```
 nutriai/                 ← repo root = frontend (Vite PWA)
-├─ package.json          ← controls the whole build (workspaces)
+├─ package.json          ← controls the whole build (npm workspaces)
 ├─ src/                  ← React app
 ├─ dist/                 ← built PWA (generated)
 ├─ worker/               ← Cloudflare Worker
-│  ├─ wrangler.toml      ← Worker config: bindings + static assets (../dist)
+│  ├─ wrangler.toml      ← Worker config: R2/DO/Assets + static assets (../dist)
 │  ├─ package.json       ← `build` script builds the frontend in `..`
 │  └─ src/
 └─ docs/
@@ -21,24 +46,10 @@ nutriai/                 ← repo root = frontend (Vite PWA)
 
 - `npm workspaces` links `worker` to the root.
 - Root `npm run build` builds the frontend into `dist/`.
-- Worker `build` script (`npm --prefix .. install && npm --prefix .. run build`)
-  builds the frontend from inside `worker/` so the Dashboard can call it.
+- Worker `build` script builds the frontend from inside `worker/` so the
+  Dashboard can call it.
 - `worker/wrangler.toml` sets `assets.directory = "../dist"` and
   `not_found_handling = "single-page-application"`.
-
-## One-time resource setup (run locally once)
-
-The Dashboard reads `wrangler.toml`, but the bindings must exist first:
-
-```bash
-cd worker
-wrangler d1 create nutriai
-wrangler r2 bucket create nutriai-images
-wrangler kv namespace create KV
-wrangler d1 execute nutriai --remote --file=migrations/0001_init.sql
-```
-
-Paste the **D1 database_id** and **KV id** into `worker/wrangler.toml`.
 
 ## Exact Cloudflare Dashboard settings
 
@@ -46,76 +57,69 @@ Paste the **D1 database_id** and **KV id** into `worker/wrangler.toml`.
 2. Choose the GitHub repository.
 3. Fill in exactly:
 
-| Field | Value |
-| --- | --- |
-| **Product** | Workers |
-| **Repository** | `<your-org>/<repo>` |
-| **Root directory** | `worker` |
-| **Build command** | `npm install && npm run build` |
-| **Deploy command** | _(leave default — Dashboard runs `wrangler deploy`)_ |
-| **Environment (Production)** | Production |
-| **Compatibility date** | `2024-11-01` |
-| **Compatibility flags** | `nodejs_compat` |
+   | Field | Value |
+   | --- | --- |
+   | **Product** | Workers |
+   | **Repository** | `<your-org>/<repo>` |
+   | **Root directory** | `worker` |
+   | **Build command** | `npm install && npm run build` |
+   | **Deploy command** | _(leave default — Dashboard runs `wrangler deploy`)_ |
+   | **Environment (Production)** | Production |
+   | **Compatibility date** | `2024-11-01` |
+   | **Compatibility flags** | `nodejs_compat` |
+
+4. **Create the Worker project named `nutriai`** (matches `wrangler.toml`).
 
 The Dashboard runs `npm install && npm run build` **inside `worker/`**, which
 builds the frontend into `../dist`, then automatically runs `wrangler deploy`
 using `worker/wrangler.toml` (which serves `../dist` as static assets).
 
-### Environment variables (`[vars]`)
+## Create and bind resources (Dashboard)
 
-Set these in **Settings → Variables and Secrets → Production**:
+Do this once, in the Dashboard, **before or after** the first deploy (the app
+boots fine without them and starts using them once bound):
 
-| Variable | Example value |
-| --- | --- |
-| `ENVIRONMENT` | `production` |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
-| `R2_PUBLIC_URL` | `https://pub-<hash>.r2.dev` |
-| `FRONTEND_URL` | `https://nutriai.<sub>.workers.dev` |
-| `GOOGLE_REDIRECT_URI` | `https://nutriai.<sub>.workers.dev/api/auth/google/callback` |
+1. **D1** — *Workers & Pages → nutriai → Settings → Variables and Secrets →
+   Add → D1 database*. Create a database named **`nutriai`** and bind it with
+   the binding name **`DB`**.
+2. **KV** — same page → *Add → KV namespace*. Create a namespace (any name)
+   and bind it with the binding name **`KV`** (used for rate limiting and OAuth
+   state). If you skip this, the app still works and treats KV as a no-op.
+3. **R2** — *R2 → Create bucket*, name it **`nutriai-images`**. The
+   `wrangler.toml` `[r2_buckets]` entry already binds it as `IMAGES` by bucket
+   name, so no ID is needed. (Durable Objects `COACH_DO` and Assets/cron are
+   already declared in `wrangler.toml`.)
 
-### Secrets
+> Tip: you can also create these from the CLI and then bind in the Dashboard:
+> `wrangler d1 create nutriai`, `wrangler kv namespace create KV`,
+> `wrangler r2 bucket create nutriai-images`. The IDs stay in the Dashboard,
+> never in the repo.
 
-Add as **encrypted secrets** (never commit):
+## Secrets & variables
+
+Add as **encrypted secrets** (never commit) in *Settings → Variables and
+Secrets → Production*:
 
 | Secret | Notes |
 | --- | --- |
 | `OPENROUTER_API_KEY` | `sk-or-v1-...` |
 | `SESSION_SECRET` | `openssl rand -hex 32` |
-| `GOOGLE_CLIENT_ID` | optional |
+| `GOOGLE_CLIENT_ID` | optional (enables Google login) |
 | `GOOGLE_CLIENT_SECRET` | optional |
-| `USDA_API_KEY` | optional |
+| `USDA_API_KEY` | optional (enables USDA food lookups) |
 | `SENTRY_DSN` | optional (enables production error monitoring) |
 
-### Bindings (defined in `wrangler.toml`)
+The only **variables** (`[vars]`) are already in `wrangler.toml`:
 
-The Dashboard will provision these from `wrangler.toml` on first deploy:
+| Variable | Value |
+| --- | --- |
+| `ENVIRONMENT` | `production` |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` |
 
-- **D1**: `DB` → `nutriai`
-- **R2**: `IMAGES` → `nutriai-images`
-- **KV**: `KV`
-- **Durable Object**: `COACH_DO` (class `CoachDurable`)
-- **Cron Triggers**: `0 9 * * 1` (weekly), `0 9 1 * *` (monthly)
-
-### Static assets
-
-No dashboard field — configured in `wrangler.toml`:
-
-```toml
-[assets]
-directory = "../dist"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
-```
-
-## GitHub deployment settings
-
-- Push to **`main`** → the Dashboard automatically builds and deploys to
-  Production.
-- Pull requests → the Dashboard creates **preview deployments**
-  automatically.
-- No GitHub secrets are required (the keys above are Cloudflare secrets, not
-  GitHub secrets). `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` are only
-  needed for the CLI / GitHub Actions approach, not the Dashboard Git flow.
+The following are **no longer needed** — they are derived at runtime:
+`R2_PUBLIC_URL` (images are served from the Worker origin at
+`/api/images/:key`), `FRONTEND_URL`, and `GOOGLE_REDIRECT_URI` (both derived
+from the incoming request's origin).
 
 ## Local / manual deploy
 
@@ -125,8 +129,11 @@ npm run build      # builds the frontend
 npm run deploy     # builds + `wrangler deploy --config worker/wrangler.toml`
 ```
 
+For local development, copy `worker/.dev.vars.example` to `worker/.dev.vars`
+and fill in the secrets. Local D1/KV/R2 are wired through `wrangler dev`.
+
 ## CI
 
-`.github/workflows/ci.yml` runs lint + typecheck + test + build on every push.
-It does **not** deploy — deployment is owned by the Dashboard, so there is no
-double-deploy.
+`.github/workflows/ci.yml` runs lint + typecheck + frontend tests + build, plus
+worker typecheck + worker tests, on every push. It does **not** deploy —
+deployment is owned by the Dashboard, so there is no double-deploy.

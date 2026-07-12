@@ -4,7 +4,7 @@ import type { Env, AppEnv } from "./types";
 import { securityHeaders, cors, rateLimit, getOrCreateUser } from "./middleware";
 import { NutritionService, type EnrichedFood } from "./services/nutrition";
 import { CoachService } from "./services/coach";
-import { Repo } from "./services/db";
+import { Repo, ensureSchema } from "./services/db";
 import { complete } from "./services/openrouter";
 import {
   AI_CONFIG,
@@ -23,7 +23,7 @@ app.use("*", async (c, next) => {
   c.set("requestId", requestId);
   logger.init(c.env);
   securityHeaders(c);
-  cors(c, c.env);
+  cors(c);
   if (c.req.method === "OPTIONS") return c.body(null, 204);
   const start = performance.now();
   await next();
@@ -38,6 +38,23 @@ app.get("/api/health", (c) => {
     hasOpenRouterKey: !!c.env.OPENROUTER_API_KEY,
     time: new Date().toISOString(),
   });
+});
+
+/* ------------------------------- Image CDN ------------------------------- */
+
+// Serve images stored in R2 through the Worker's own origin (same origin as the
+// PWA), so no public R2 URL needs to be configured.
+app.get("/api/images/:key", async (c) => {
+  const key = c.req.param("key");
+  if (!/^[A-Za-z0-9_\-/]+\.[A-Za-z0-9]+$/.test(key)) {
+    return c.json({ error: "invalid_key" }, 400);
+  }
+  const obj = await c.env.IMAGES.get(key);
+  if (!obj) return c.json({ error: "not_found" }, 404);
+  const headers = new Headers();
+  headers.set("Content-Type", obj.httpMetadata?.contentType ?? "application/octet-stream");
+  headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  return new Response(obj.body, { headers });
 });
 
 /* --------------------------------- Vision -------------------------------- */
@@ -66,7 +83,7 @@ app.post("/api/vision", async (c) => {
   let url: string;
   try {
     await c.env.IMAGES.put(key, bytes, { httpMetadata: { contentType: mime } });
-    url = `${c.env.R2_PUBLIC_URL}/${key}`;
+    url = `${new URL(c.req.url).origin}/api/images/${key}`;
   } catch (e) {
     logger.error("r2", e, { op: "put", requestId });
     return c.json({ error: "image_upload_failed" }, 502);
@@ -250,22 +267,30 @@ app.get("/api/auth/session", async (c) => {
 });
 
 app.get("/api/auth/google", async (c) => {
+  if (!c.env.KV || !c.env.GOOGLE_CLIENT_ID) {
+    return c.json({ error: "oauth_unavailable" }, 503);
+  }
+  const origin = new URL(c.req.url).origin;
+  const redirectUri = `${origin}/api/auth/google/callback`;
   const state = crypto.randomUUID();
   await c.env.KV.put(`oauth:state:${state}`, "1", { expirationTtl: 600 });
   const url =
     `https://accounts.google.com/o/oauth2/v2/auth?client_id=${c.env.GOOGLE_CLIENT_ID}` +
-    `&redirect_uri=${encodeURIComponent(c.env.GOOGLE_REDIRECT_URI ?? "")}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&response_type=code&scope=openid%20email%20profile&state=${state}`;
   return c.redirect(url, 302);
 });
 
 app.get("/api/auth/google/callback", async (c) => {
+  if (!c.env.KV) return c.json({ error: "oauth_unavailable" }, 503);
   const code = c.req.query("code");
   const state = c.req.query("state");
   if (!code || !state) return c.json({ error: "invalid_callback" }, 400);
   const ok = await c.env.KV.get(`oauth:state:${state}`);
   if (!ok) return c.json({ error: "bad_state" }, 400);
   await c.env.KV.delete(`oauth:state:${state}`);
+
+  const redirectUri = `${new URL(c.req.url).origin}/api/auth/google/callback`;
 
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -274,7 +299,7 @@ app.get("/api/auth/google/callback", async (c) => {
       code,
       client_id: c.env.GOOGLE_CLIENT_ID ?? "",
       client_secret: c.env.GOOGLE_CLIENT_SECRET ?? "",
-      redirect_uri: c.env.GOOGLE_REDIRECT_URI ?? "",
+      redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
   });
@@ -305,7 +330,7 @@ app.get("/api/auth/google/callback", async (c) => {
     "Set-Cookie",
     `nutriai_session=${session}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}`
   );
-  return c.redirect(c.env.FRONTEND_URL, 302);
+  return c.redirect("/", 302);
 });
 
 app.post("/api/auth/logout", async (c) => {
@@ -319,6 +344,19 @@ const handler = {
   async fetch(request: Request, env: Env, ctx: any) {
     logger.init(env);
     const url = new URL(request.url);
+
+    // Ensure the D1 schema exists (idempotent, cached per isolate).
+    if (url.pathname.startsWith("/api/")) {
+      try {
+        await ensureSchema(env);
+      } catch (e) {
+        logger.error("db", e, { op: "ensureSchema" });
+        return new Response(JSON.stringify({ error: "db_unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // API routes are handled by the Hono app.
     if (url.pathname.startsWith("/api/")) {
@@ -340,7 +378,9 @@ const handler = {
   async scheduled(event: any, env: Env, ctx: any) {
     logger.init(env);
     ctx.waitUntil(
-      handleScheduled(event, env).catch((e) => logger.error("scheduled", e, { cron: event.cron }))
+      ensureSchema(env)
+        .then(() => handleScheduled(event, env))
+        .catch((e) => logger.error("scheduled", e, { cron: event.cron }))
     );
   },
 };

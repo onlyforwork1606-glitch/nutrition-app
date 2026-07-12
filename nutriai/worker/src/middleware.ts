@@ -78,15 +78,15 @@ export function securityHeaders(c: AppContext) {
   );
 }
 
-export function cors(c: AppContext, env: Env) {
+export function cors(c: AppContext) {
   const origin = c.req.header("origin");
-  const allowed = env.FRONTEND_URL;
-  if (origin && (origin === allowed || env.ENVIRONMENT === "development")) {
-    c.header("Access-Control-Allow-Origin", origin);
-    c.header("Access-Control-Allow-Credentials", "true");
-    c.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    c.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
-  }
+  if (!origin) return; // same-origin request — no CORS headers needed
+  // Single-worker deployment: the API and the PWA are served from the same
+  // origin, so reflect the request Origin. Cross-origin requests are not used.
+  c.header("Access-Control-Allow-Origin", origin);
+  c.header("Access-Control-Allow-Credentials", "true");
+  c.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  c.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
 }
 
 /* ------------------------------ Rate limit ------------------------------- */
@@ -96,6 +96,9 @@ export async function rateLimit(
   key: string,
   requestId: string
 ): Promise<{ ok: boolean; remaining: number }> {
+  // KV is bound in the Cloudflare Dashboard; if absent, allow the request.
+  if (!env.KV) return { ok: true, remaining: Number.MAX_SAFE_INTEGER };
+
   const now = Date.now();
   const minute = Math.floor(now / 60_000);
   const day = new Date().toISOString().slice(0, 10);

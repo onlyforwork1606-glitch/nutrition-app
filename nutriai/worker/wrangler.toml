@@ -10,49 +10,44 @@ directory = "../dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# D1 database
-[[d1_databases]]
-binding = "DB"
-database_name = "nutriai"
-database_id = "REPLACE_WITH_D1_ID"
-migrations_dir = "migrations"
+# D1 database (binding name "DB") is bound in the Cloudflare Dashboard:
+#   Worker → Settings → Variables and Secrets → Add → D1 database
+#   Create a database named "nutriai" and bind it with the name "DB".
+# wrangler.toml cannot reference a D1 database without its id (which only
+# exists after the resource is created), so it is intentionally not listed
+# here. The database schema self-initializes on first request (see
+# src/services/db.ts), so no migration step is required at deploy time.
 
-# R2 bucket for meal / temp images
+# R2 bucket for meal / temp images. Create a bucket named "nutriai-images"
+# (or bind an existing one with the binding name "IMAGES").
 [[r2_buckets]]
 binding = "IMAGES"
 bucket_name = "nutriai-images"
 
-# KV for rate-limit counters, sessions cache, magic-link tokens
-[[kv_namespaces]]
-binding = "KV"
-id = "REPLACE_WITH_KV_ID"
+# KV namespace (binding name "KV") is bound in the Cloudflare Dashboard:
+#   Worker → Settings → Variables and Secrets → Add → KV namespace
+#   Bind it with the name "KV" (used for rate limiting and OAuth state).
+# Like D1, a KV namespace id is only known after creation, so it is not
+# listed here. The app treats a missing KV as a no-op so it still boots.
 
-# (Optional) Durable Object for per-user coach memory cache
+# Durable Object for per-user coach memory cache.
 [[durable_objects.bindings]]
 name = "COACH_DO"
 class_name = "CoachDurable"
-script_name = "nutriai"
 
 [[migrations]]
 tag = "v1"
 new_classes = ["CoachDurable"]
 
-# Background jobs
+# Background jobs: weekly report (Mon 9am UTC) + monthly report (1st 9am UTC).
 [triggers]
-crons = ["0 9 * * 1", "0 9 1 * *"]  # weekly report (Mon 9am), monthly report (1st 9am)
+crons = ["0 9 * * 1", "0 9 1 * *"]
 
-# Secrets (set via: wrangler secret put OPENROUTER_API_KEY)
-# OPENROUTER_API_KEY
-# SESSION_SECRET
-# GOOGLE_CLIENT_ID
-# GOOGLE_CLIENT_SECRET
-# USDA_API_KEY  (optional)
-# SENTRY_DSN    (optional; enables production error monitoring)
-# Variables (replace the worker domain with your deployed URL):
+# Secrets are set in the Cloudflare Dashboard (or `wrangler secret put`):
+#   OPENROUTER_API_KEY, SESSION_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
+#   USDA_API_KEY (optional), SENTRY_DSN (optional, enables prod error monitoring)
+#
+# Variables
 [vars]
 ENVIRONMENT = "production"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-R2_PUBLIC_URL = "https://pub-REPLACE.r2.dev"
-# In the single-worker setup the API and the PWA share one domain.
-FRONTEND_URL = "https://nutriai.<sub>.workers.dev"
-GOOGLE_REDIRECT_URI = "https://nutriai.<sub>.workers.dev/api/auth/google/callback"

@@ -4,11 +4,14 @@ OPENROUTER_API_KEY=sk-or-v1-xxxx
 SESSION_SECRET=generate-with-openssl-rand-hex-32
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:8787/api/auth/google/callback
 USDA_API_KEY=
+SENTRY_DSN=
 
 # Public vars (also set in wrangler.toml [vars])
+# ENVIRONMENT is "development" locally so rate limits are relaxed.
 ENVIRONMENT=development
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-R2_PUBLIC_URL=http://localhost:8787
-FRONTEND_URL=http://localhost:5173
+
+# NOTE: R2_PUBLIC_URL / FRONTEND_URL / GOOGLE_REDIRECT_URI are no longer needed.
+# Images are served from the Worker's own origin (/api/images/:key) and the
+# Google OAuth redirect_uri is derived from the incoming request's origin.

@@ -17,8 +17,6 @@ export interface Env {
   GOOGLE_REDIRECT_URI?: string;
   USDA_API_KEY?: string;
   SENTRY_DSN?: string;
-  R2_PUBLIC_URL: string;
-  FRONTEND_URL: string;
   ENVIRONMENT: string;
   EMAIL_FROM?: string;
 }

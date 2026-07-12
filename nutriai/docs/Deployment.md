@@ -42,11 +42,15 @@ wrangler secret put GOOGLE_CLIENT_SECRET    # optional
 wrangler secret put USDA_API_KEY            # optional
 ```
 
-Edit `wrangler.toml` `[vars]`:
-- `R2_PUBLIC_URL` → your R2 public URL (`https://pub-<hash>.r2.dev` or a
-  custom domain).
-- `FRONTEND_URL` → your Pages URL.
-- `GOOGLE_REDIRECT_URI` → `https://<api-domain>/api/auth/google/callback`.
+The remaining variables (`ENVIRONMENT`, `OPENROUTER_BASE_URL`) are already set
+in `wrangler.toml` `[vars]`. The following are **no longer configured** — they
+are derived at runtime: `R2_PUBLIC_URL` (images are served from the Worker
+origin at `/api/images/:key`), `FRONTEND_URL`, and `GOOGLE_REDIRECT_URI` (both
+derived from the incoming request's origin).
+
+> For a Dashboard Git deployment, D1 (`DB`) and KV (`KV`) are bound in the
+> Cloudflare Dashboard rather than listed in `wrangler.toml`. See
+> `docs/Cloudflare-Deployment.md`.
 
 ## 3. Build the frontend, then deploy the single Worker
 
@@ -59,7 +63,7 @@ cd ..
 npm run build                 # outputs to nutriai/dist
 cd worker
 wrangler deploy               # deploys Worker + static assets
-# the app is live at https://nutriai.<sub>.workers.dev
+# the app is live at https://nutriai.<your-subdomain>.workers.dev
 ```
 
 (One-command equivalent from the repo root: `npm run deploy`.)
@@ -67,10 +71,9 @@ wrangler deploy               # deploys Worker + static assets
 ## 4. Wire a custom domain (recommended)
 
 Set a custom domain for the Worker (e.g. `nutriai.app`) in the Cloudflare
-dashboard. Then update `wrangler.toml` `[vars]`:
-- `FRONTEND_URL` → `https://nutriai.app`
-- `GOOGLE_REDIRECT_URI` → `https://nutriai.app/api/auth/google/callback`
-- `R2_PUBLIC_URL` → your R2 public URL or custom domain.
+dashboard. No `wrangler.toml` edits are required — the Google OAuth
+`redirect_uri` and image URLs are generated from the request origin, so they
+pick up the custom domain automatically.
 
 Redeploy with `wrangler deploy`.
 
