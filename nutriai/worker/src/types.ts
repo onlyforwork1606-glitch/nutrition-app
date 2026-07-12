@@ -8,6 +8,7 @@ export interface Env {
   IMAGES: R2Bucket;
   KV: KVNamespace;
   COACH_DO: DurableObjectNamespace;
+  ASSETS: Fetcher;
   OPENROUTER_API_KEY: string;
   OPENROUTER_BASE_URL: string;
   SESSION_SECRET: string;
@@ -15,6 +16,7 @@ export interface Env {
   GOOGLE_CLIENT_SECRET?: string;
   GOOGLE_REDIRECT_URI?: string;
   USDA_API_KEY?: string;
+  SENTRY_DSN?: string;
   R2_PUBLIC_URL: string;
   FRONTEND_URL: string;
   ENVIRONMENT: string;

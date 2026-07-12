@@ -1,7 +1,8 @@
 # NutriAI — Deployment
 
-This walkthrough deploys NutriAI to Cloudflare: a Worker API + D1 + R2 + KV,
-and the React PWA on Cloudflare Pages.
+This walkthrough deploys NutriAI to Cloudflare as a **single Worker** that
+serves both the React PWA (static assets) and the `/api/*` backend (Hono),
+using D1 + R2 + KV. The API and the app share one domain.
 
 ## 0. Prerequisites
 - A Cloudflare account (free tier works).
@@ -47,34 +48,33 @@ Edit `wrangler.toml` `[vars]`:
 - `FRONTEND_URL` → your Pages URL.
 - `GOOGLE_REDIRECT_URI` → `https://<api-domain>/api/auth/google/callback`.
 
-## 3. Deploy the Worker
+## 3. Build the frontend, then deploy the single Worker
 
-```bash
-wrangler deploy
-# note the worker URL, e.g. https://nutriai-api.<sub>.workers.dev
-```
-
-## 4. Build & deploy the frontend (Pages)
+The Worker serves the PWA from `../dist` (built by `npm run build`) and the
+API from `/api/*`. No `VITE_API_BASE` is needed — the app and API are
+same-origin.
 
 ```bash
 cd ..
-# point the client at the Worker API (or leave empty for same-origin Functions)
-echo "VITE_API_BASE=https://nutriai-api.<sub>.workers.dev" > .env.production
-
-npm run build
-wrangler pages deploy dist
+npm run build                 # outputs to nutriai/dist
+cd worker
+wrangler deploy               # deploys Worker + static assets
+# the app is live at https://nutriai.<sub>.workers.dev
 ```
 
-In the Pages dashboard, set the same `VITE_API_BASE` as a build environment
-variable. Set the Pages custom domain (e.g. `nutriai.pages.dev`).
+(One-command equivalent from the repo root: `npm run deploy`.)
 
-## 5. Wire custom domains (recommended)
-- Pages: `nutriai.app` (frontend).
-- Worker: `api.nutriai.app` (API). Update `FRONTEND_URL` / `R2_PUBLIC_URL`
-  accordingly and redeploy.
-- Enable R2 public access or a custom domain for meal images.
+## 4. Wire a custom domain (recommended)
 
-## 6. Verify
+Set a custom domain for the Worker (e.g. `nutriai.app`) in the Cloudflare
+dashboard. Then update `wrangler.toml` `[vars]`:
+- `FRONTEND_URL` → `https://nutriai.app`
+- `GOOGLE_REDIRECT_URI` → `https://nutriai.app/api/auth/google/callback`
+- `R2_PUBLIC_URL` → your R2 public URL or custom domain.
+
+Redeploy with `wrangler deploy`.
+
+## 5. Verify
 - Open the app → Settings → AI Status → “Check” should show **Online**.
 - Scan a meal → foods appear.
 - Ask the coach a question → it replies using your logged data.
@@ -82,12 +82,15 @@ variable. Set the Pages custom domain (e.g. `nutriai.pages.dev`).
 ## Local development
 
 ```bash
-# Worker (terminal 1)
+# Build assets once (or run `npm run dev` in a second terminal for HMR)
+cd .. && npm run build
+
+# Worker + assets (terminal 1)
 cd worker && cp .dev.vars.example .dev.vars && wrangler dev
 
-# Frontend (terminal 2)
-cd .. && npm run dev
-# set VITE_API_BASE=http://localhost:8787 in .env for local API
+# Frontend HMR (terminal 2) — point the client at the local Worker
+cd .. && echo "VITE_API_BASE=http://localhost:8787" > .env
+npm run dev
 ```
 
 ## Cron notes

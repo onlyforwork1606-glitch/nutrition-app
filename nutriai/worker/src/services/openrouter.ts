@@ -1,5 +1,6 @@
 import type { Env } from "../types";
-import { log, timed } from "../observability";
+import { logger } from "../logger";
+import { timed } from "../observability";
 
 export interface ORMessage {
   role: "system" | "user" | "assistant";
@@ -57,20 +58,23 @@ export async function complete(
 
       if (res.status === 429) {
         lastErr = new Error("rate_limited");
-        log("warn", "openrouter_429", { requestId, model });
+        logger.warn("openrouter_429", { requestId, model });
         continue;
       }
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
         lastErr = new Error(`openrouter_${res.status}: ${txt}`);
-        if (res.status === 401) throw new Error("invalid_openrouter_key");
+        if (res.status === 401) {
+          logger.aiFailure(model, lastErr, { requestId, status: 401 });
+          throw new Error("invalid_openrouter_key");
+        }
         continue;
       }
 
       const json = (await res.json()) as any;
       const content: string | undefined = json?.choices?.[0]?.message?.content;
       if (!content) throw new Error("empty_completion");
-      log("info", "openrouter_ok", { requestId, model, latencyMs: ms });
+      logger.info("openrouter_ok", { requestId, model, latencyMs: ms });
       clearTimeout(timeout);
       return {
         content,
@@ -82,7 +86,9 @@ export async function complete(
     }
   }
   clearTimeout(timeout);
-  throw lastErr instanceof Error ? lastErr : new Error("openrouter_failed");
+  const final = lastErr instanceof Error ? lastErr : new Error("openrouter_failed");
+  logger.aiFailure(models[0], final, { requestId });
+  throw final;
 }
 
 function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {

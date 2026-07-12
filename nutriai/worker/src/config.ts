@@ -7,29 +7,28 @@ export const AI_CONFIG = {
   visionModel: "google/gemma-4-26b-a4b-it:free",
   visionTemperature: 0.2,
   visionMaxTokens: 1200,
-  coachModel: "google/gemma-4-26b-a4b-it:free",
+  coachModel: "qwen/qwen2.5-72b-instruct:free",
   coachTemperature: 0.6,
   coachMaxTokens: 900,
   visionFallbacks: ["nvidia/nemotron-nano-12b-v2-vl:free"],
   coachFallbacks: [
+    "qwen/qwen3-235b-a22b:free",
+    "google/gemma-4-26b-a4b-it:free",
     "nvidia/nemotron-nano-12b-v2-vl:free",
     "meta-llama/llama-3.3-70b-instruct:free",
   ],
 };
 
-export const VISION_PROMPT = `Analyze this meal.
-Identify every visible food item.
-Estimate realistic serving sizes.
-Estimate calories.
-Estimate protein.
-Estimate carbohydrates.
-Estimate fats.
-Estimate fibre.
-If uncertain provide your best estimate.
-Never hallucinate impossible values.
-Return ONLY valid JSON.
-No markdown.
-No explanations.`;
+/** Confidence below this triggers a "please confirm" prompt before saving. */
+export const CONFIDENCE_THRESHOLD = 0.7;
+
+export const VISION_PROMPT = `You are the VISION stage of a nutrition pipeline.
+Step 1 (Food Detection): Identify every visible food item by name.
+Step 2 (Portion Estimation): Estimate a realistic serving size/portion for each.
+Step 3: Provide your BEST-GUESS macros for each item (they will be
+re-verified against a nutrition database and corrected when a match exists,
+so never fabricate precise values if unsure — give reasonable estimates).
+Return ONLY valid JSON. No markdown. No explanations.`;
 
 export const VISION_OUTPUT_HINT = `Respond strictly with JSON of the shape:
 {

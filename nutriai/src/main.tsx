@@ -4,7 +4,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { AppProvider } from "@/context/AppProvider";
 import { router } from "@/routes/router";
+import { initLogger } from "@/lib/logger";
 import "@/index.css";
+
+initLogger();
 
 const queryClient = new QueryClient({
   defaultOptions: {

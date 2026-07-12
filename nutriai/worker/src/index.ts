@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Env, VisionResponse, VisionFood, AppEnv } from "./types";
+import type { Env, AppEnv } from "./types";
 import { securityHeaders, cors, rateLimit, getOrCreateUser } from "./middleware";
-import { NutritionService } from "./services/nutrition";
+import { NutritionService, type EnrichedFood } from "./services/nutrition";
 import { CoachService } from "./services/coach";
 import { Repo } from "./services/db";
 import { complete } from "./services/openrouter";
@@ -10,19 +10,25 @@ import {
   AI_CONFIG,
   VISION_PROMPT,
   VISION_OUTPUT_HINT,
+  CONFIDENCE_THRESHOLD,
 } from "./config";
-import { log } from "./observability";
+import { logger } from "./logger";
+import { withSentry } from "@sentry/cloudflare";
 
 const app = new Hono<AppEnv>();
 
-/* request id + security + cors for all routes */
+/* request id + security + cors + latency for all API routes */
 app.use("*", async (c, next) => {
   const requestId = crypto.randomUUID();
   c.set("requestId", requestId);
+  logger.init(c.env);
   securityHeaders(c);
   cors(c, c.env);
   if (c.req.method === "OPTIONS") return c.body(null, 204);
+  const start = performance.now();
   await next();
+  const ms = Math.round(performance.now() - start);
+  logger.apiLatency(c.req.path, ms);
 });
 
 app.get("/api/health", (c) => {
@@ -57,11 +63,21 @@ app.post("/api/vision", async (c) => {
   if (bytes.byteLength > 10 * 1024 * 1024) return c.json({ error: "image_too_large" }, 413);
 
   const key = `tmp/${crypto.randomUUID()}.${extFromMime(mime)}`;
-  await c.env.IMAGES.put(key, bytes, { httpMetadata: { contentType: mime } });
-  const url = `${c.env.R2_PUBLIC_URL}/${key}`;
+  let url: string;
+  try {
+    await c.env.IMAGES.put(key, bytes, { httpMetadata: { contentType: mime } });
+    url = `${c.env.R2_PUBLIC_URL}/${key}`;
+  } catch (e) {
+    logger.error("r2", e, { op: "put", requestId });
+    return c.json({ error: "image_upload_failed" }, 502);
+  }
 
   const nutrition = new NutritionService(c.env);
-  await nutrition.seedIfEmpty();
+  try {
+    await nutrition.seedIfEmpty();
+  } catch (e) {
+    logger.error("d1", e, { op: "seedIfEmpty", requestId });
+  }
 
   const messages = [
     { role: "system" as const, content: `${VISION_PROMPT}\n${VISION_OUTPUT_HINT}` },
@@ -85,26 +101,41 @@ app.post("/api/vision", async (c) => {
     );
     raw = res.content;
   } catch (e) {
-    log("error", "vision_failed", { requestId, error: String(e) });
+    logger.error("ai", e, { op: "vision", requestId });
     return c.json({ error: "vision_failed" }, 502);
   }
 
   const foods = parseFoods(raw);
   if (!foods) return c.json({ error: "vision_parse_error", raw }, 422);
 
-  const enriched = await nutrition.enrich(foods);
-  // mark temp image for cleanup later
-  const repo = new Repo(c.env);
-  await repo.saveMeal(user.id, {
-    id: crypto.randomUUID(),
-    date: parsed.data.date ?? new Date().toISOString().slice(0, 10),
-    type: "snacks",
-    note: "scanned",
-    items: enriched,
-  });
+  let enriched: EnrichedFood[];
+  try {
+    enriched = await nutrition.enrich(foods);
+  } catch (e) {
+    logger.error("nutrition", e, { op: "enrich", requestId });
+    enriched = foods.map((f) => ({
+      ...f,
+      confidence: f.confidence ?? 0.4,
+      source: "ai" as const,
+      needsConfirmation: true,
+    }));
+  }
 
-  const response: VisionResponse = { foods: enriched };
-  return c.json(response);
+  // Persist the scanned meal (D1) — best-effort, failures are logged.
+  try {
+    const repo = new Repo(c.env);
+    await repo.saveMeal(user.id, {
+      id: crypto.randomUUID(),
+      date: parsed.data.date ?? new Date().toISOString().slice(0, 10),
+      type: "snacks",
+      note: "scanned",
+      items: enriched,
+    });
+  } catch (e) {
+    logger.error("d1", e, { op: "saveMeal", requestId });
+  }
+
+  return c.json({ foods: enriched, confirmThreshold: CONFIDENCE_THRESHOLD });
 });
 
 /* --------------------------------- Coach --------------------------------- */
@@ -139,7 +170,7 @@ app.post("/api/coach", async (c) => {
     );
     return c.json(res);
   } catch (e) {
-    log("error", "coach_failed", { requestId, error: String(e) });
+    logger.error("ai", e, { op: "coach", requestId });
     return c.json({ error: "coach_failed" }, 502);
   }
 });
@@ -284,12 +315,44 @@ app.post("/api/auth/logout", async (c) => {
 
 /* -------------------------------- Export --------------------------------- */
 
-export default {
-  fetch: app.fetch,
+const handler = {
+  async fetch(request: Request, env: Env, ctx: any) {
+    logger.init(env);
+    const url = new URL(request.url);
+
+    // API routes are handled by the Hono app.
+    if (url.pathname.startsWith("/api/")) {
+      try {
+        return await app.fetch(request, env, ctx);
+      } catch (e) {
+        logger.error("worker", e, { path: url.pathname });
+        return new Response(JSON.stringify({ error: "internal_error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    // Everything else is the SPA (PWA). The platform's SPA fallback serves
+    // index.html for client-side routes; assets are served directly.
+    return env.ASSETS.fetch(request);
+  },
   async scheduled(event: any, env: Env, ctx: any) {
-    ctx.waitUntil(handleScheduled(event, env));
+    logger.init(env);
+    ctx.waitUntil(
+      handleScheduled(event, env).catch((e) => logger.error("scheduled", e, { cron: event.cron }))
+    );
   },
 };
+
+export default withSentry(
+  (env) => ({
+    dsn: env.SENTRY_DSN,
+    environment: env.ENVIRONMENT,
+    tracesSampleRate: 0.1,
+  }),
+  handler
+);
 
 export class CoachDurable {
   constructor(_state: any, _env: any) {}
@@ -307,9 +370,9 @@ async function handleScheduled(event: any, env: Env) {
     try {
       const report = await coach.report(u.id, kind, crypto.randomUUID());
       await new Repo(env).addCoachMessage(u.id, "assistant", `[${kind} report]\n${report}`);
-      log("info", "scheduled_report", { userId: u.id, kind });
+      logger.info("scheduled_report", { userId: u.id, kind });
     } catch (e) {
-      log("error", "scheduled_report_failed", { userId: u.id, error: String(e) });
+      logger.error("scheduled", e, { op: "scheduled_report", userId: u.id, kind });
     }
   }
 }
@@ -340,7 +403,19 @@ function extFromMime(mime: string): string {
   return mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
 }
 
-function parseFoods(raw: string): VisionFood[] | null {
+interface ParsedFood {
+  name: string;
+  portion: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  fiber: number;
+  confidence?: number;
+  source: "ai";
+}
+
+function parseFoods(raw: string): ParsedFood[] | null {
   let json = raw.trim();
   const fence = json.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) json = fence[1];

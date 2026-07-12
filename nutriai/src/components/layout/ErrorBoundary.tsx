@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from "react";
 import { GlassCard, Button } from "@/components/ui/primitives";
+import { logger } from "@/lib/logger";
 
 class ErrorBoundary extends Component<
   { children: ReactNode },
@@ -9,6 +10,12 @@ class ErrorBoundary extends Component<
 
   static getDerivedStateFromError(error: Error) {
     return { error };
+  }
+
+  componentDidCatch(error: Error, info: unknown) {
+    logger.error("react", error, {
+      componentStack: typeof info === "object" && info ? JSON.stringify(info) : String(info),
+    });
   }
 
   render() {

@@ -1,6 +1,7 @@
 import { VisionResultSchema, type VisionResult, type FoodItem } from "./types";
 import { uid, todayKey } from "./utils";
 import { apiClient, ApiError } from "./api";
+import { logger } from "./logger";
 
 export class AIError extends Error {
   constructor(message: string, public status?: number) {
@@ -27,6 +28,7 @@ export const AIService = {
       const data = await apiClient.vision(imageDataUrl, todayKey(), signal);
       const parsed = VisionResultSchema.safeParse({ foods: data.foods });
       if (!parsed.success) {
+        logger.aiFailure("gemma-vision", new Error("invalid_vision_result"));
         throw new AIError("AI returned an unreadable result.");
       }
       return parsed.data;
@@ -74,6 +76,7 @@ export const AIService = {
       const data = await apiClient.coachChat(message, contextJson, history, signal);
       return data.message;
     } catch (e) {
+      logger.aiFailure("qwen-coach", e);
       throw toAIError(e);
     }
   },

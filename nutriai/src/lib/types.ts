@@ -35,6 +35,9 @@ export const FoodItemSchema = z.object({
   fat: z.number().min(0).default(0),
   fiber: z.number().min(0).default(0),
   confidence: z.number().min(0).max(1).optional(),
+  source: z.enum(["ifct", "usda", "curated", "ai", "manual"]).optional(),
+  foodId: z.string().optional(),
+  needsConfirmation: z.boolean().optional(),
 });
 
 export type FoodItem = z.infer<typeof FoodItemSchema>;
@@ -85,7 +88,7 @@ export interface Settings {
   notifications: boolean;
 }
 
-/** What the vision model returns. */
+/** What the vision pipeline returns. */
 export const VisionResultSchema = z.object({
   foods: z.array(
     z.object({
@@ -97,8 +100,12 @@ export const VisionResultSchema = z.object({
       carbs: z.number().min(0).default(0),
       fiber: z.number().min(0).default(0),
       confidence: z.number().min(0).max(1).optional(),
+      source: z.enum(["ifct", "usda", "curated", "ai"]).optional(),
+      foodId: z.string().optional(),
+      needsConfirmation: z.boolean().optional(),
     })
   ),
+  confirmThreshold: z.number().optional(),
 });
 
 export type VisionResult = z.infer<typeof VisionResultSchema>;

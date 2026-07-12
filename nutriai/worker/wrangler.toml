@@ -1,7 +1,14 @@
-name = "nutriai-worker"
+name = "nutriai"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
 compatibility_flags = ["nodejs_compat"]
+
+# Serve the built PWA as static assets (SPA fallback to index.html).
+# Build with `npm run build` from the repo root before deploying.
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
 
 # D1 database
 [[d1_databases]]
@@ -24,7 +31,7 @@ id = "REPLACE_WITH_KV_ID"
 [[durable_objects.bindings]]
 name = "COACH_DO"
 class_name = "CoachDurable"
-script_name = "nutriai-worker"
+script_name = "nutriai"
 
 [[migrations]]
 tag = "v1"
@@ -40,10 +47,12 @@ crons = ["0 9 * * 1", "0 9 1 * *"]  # weekly report (Mon 9am), monthly report (1
 # GOOGLE_CLIENT_ID
 # GOOGLE_CLIENT_SECRET
 # USDA_API_KEY  (optional)
-# Variables:
+# SENTRY_DSN    (optional; enables production error monitoring)
+# Variables (replace the worker domain with your deployed URL):
 [vars]
 ENVIRONMENT = "production"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 R2_PUBLIC_URL = "https://pub-REPLACE.r2.dev"
-FRONTEND_URL = "https://nutriai.pages.dev"
-GOOGLE_REDIRECT_URI = "https://api.nutriai.app/api/auth/google/callback"
+# In the single-worker setup the API and the PWA share one domain.
+FRONTEND_URL = "https://nutriai.<sub>.workers.dev"
+GOOGLE_REDIRECT_URI = "https://nutriai.<sub>.workers.dev/api/auth/google/callback"

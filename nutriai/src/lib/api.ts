@@ -1,3 +1,5 @@
+import { logger } from "./logger";
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || "";
 
 export class ApiError extends Error {
@@ -11,27 +13,38 @@ async function request<T>(
   path: string,
   options: { method?: string; body?: unknown; signal?: AbortSignal }
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: options.method ?? "POST",
-    // The session cookie is HttpOnly and scoped to the API origin;
-    // include it on cross-origin requests so the Worker can identify the user.
-    credentials: "include",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: options.signal,
-  });
+  const start = performance.now();
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: options.method ?? "POST",
+      // The session cookie is HttpOnly and scoped to the API origin;
+      // include it on cross-origin requests so the Worker can identify the user.
+      credentials: "include",
+      headers: options.body ? { "Content-Type": "application/json" } : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: options.signal,
+    });
 
-  const isJson = res.headers.get("content-type")?.includes("application/json");
-  const data = isJson ? await res.json().catch(() => null) : null;
+    const isJson = res.headers.get("content-type")?.includes("application/json");
+    const data = isJson ? await res.json().catch(() => null) : null;
 
-  if (!res.ok) {
-    const msg =
-      (data as any)?.error === "rate_limited"
-        ? "Daily AI limit reached. Try again tomorrow, or the server will reset."
-        : (data as any)?.error || `Request failed (${res.status})`;
-    throw new ApiError(msg, res.status, data);
+    if (!res.ok) {
+      const msg =
+        (data as any)?.error === "rate_limited"
+          ? "Daily AI limit reached. Try again tomorrow, or the server will reset."
+          : (data as any)?.error || `Request failed (${res.status})`;
+      logger.error("api", new Error(msg), { path, status: res.status });
+      throw new ApiError(msg, res.status, data);
+    }
+    return data as T;
+  } catch (e) {
+    if (!(e instanceof ApiError)) {
+      logger.error("api", e, { path });
+    }
+    throw e;
+  } finally {
+    logger.apiLatency(path, Math.round(performance.now() - start));
   }
-  return data as T;
 }
 
 export const apiClient = {

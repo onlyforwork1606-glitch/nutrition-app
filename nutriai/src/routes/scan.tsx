@@ -10,7 +10,7 @@ import { MEAL_ORDER, MEAL_LABELS, type MealTypeValue, type FoodItem } from "@/li
 import { useNavigate } from "@tanstack/react-router";
 
 export function ScanPage() {
-  const { settings } = useApp();
+  const { hasKey } = useApp();
   const saveMeal = useSaveMeal();
   const navigate = useNavigate();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -21,6 +21,7 @@ export function ScanPage() {
   const [error, setError] = useState<string | null>(null);
   const [mealType, setMealType] = useState<MealTypeValue>("lunch");
   const [saved, setSaved] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -45,7 +46,9 @@ export function ScanPage() {
   const removeItem = (id: string) =>
     setItems((prev) => prev.filter((i) => i.id !== id));
 
-  const save = () => {
+  const needsConfirm = items.some((i) => i.needsConfirmation);
+
+  const doSave = () => {
     if (!items.length) return;
     const meal = {
       id: uid(),
@@ -58,6 +61,7 @@ export function ScanPage() {
     saveMeal.mutate(meal, {
       onSuccess: () => {
         setSaved(true);
+        setConfirmOpen(false);
         setTimeout(() => {
           setImage(null);
           setItems([]);
@@ -68,7 +72,14 @@ export function ScanPage() {
     });
   };
 
-  const noKey = !settings?.openRouterKey;
+  const save = () => {
+    if (!items.length) return;
+    if (needsConfirm) {
+      setConfirmOpen(true);
+      return;
+    }
+    doSave();
+  };
 
   return (
     <div className="space-y-5">
@@ -112,9 +123,10 @@ export function ScanPage() {
           <Button variant="glass" onClick={() => document.getElementById("gallery")?.click()}>
             <Upload className="h-4 w-4" /> Upload from gallery
           </Button>
-          {noKey && (
+          {!hasKey && (
             <p className="max-w-xs text-center text-xs text-amber-300/80">
-              Add your OpenRouter API key in Settings to enable AI recognition.
+              AI recognition is currently unavailable (server offline). You can
+              still add foods manually.
             </p>
           )}
         </motion.div>
@@ -215,8 +227,20 @@ export function ScanPage() {
                         </Field>
                       </div>
                       {item.confidence != null && (
-                        <div className="text-[11px] text-white/40">
-                          AI confidence: {Math.round(item.confidence * 100)}%
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                          <span className="text-white/40">
+                            Confidence: {Math.round(item.confidence * 100)}%
+                          </span>
+                          {item.source && (
+                            <span className="rounded-full bg-white/10 px-2 py-0.5 uppercase text-white/60">
+                              {item.source}
+                            </span>
+                          )}
+                          {item.needsConfirmation && (
+                            <span className="rounded-full bg-amber-400/20 px-2 py-0.5 text-amber-300">
+                              Please confirm
+                            </span>
+                          )}
                         </div>
                       )}
                     </GlassCard>
@@ -248,6 +272,41 @@ export function ScanPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={() => setConfirmOpen(false)}>
+          <div className="w-full max-w-md p-3" onClick={(e) => e.stopPropagation()}>
+            <GlassCard className="!rounded-[2rem] space-y-3">
+              <h3 className="text-sm font-semibold">Confirm low-confidence items</h3>
+              <p className="text-xs text-white/60">
+                Some foods couldn't be matched to our nutrition database with high
+                confidence, so their values are AI estimates. Please review before saving.
+              </p>
+              <div className="max-h-48 space-y-2 overflow-y-auto">
+                {items
+                  .filter((i) => i.needsConfirmation)
+                  .map((i) => (
+                    <div key={i.id} className="rounded-2xl bg-white/5 px-3 py-2 text-xs">
+                      <div className="font-medium text-white/80">{i.name}</div>
+                      <div className="text-white/50">
+                        {Math.round(i.calories)} kcal · {Math.round(i.protein)}g protein
+                        {i.confidence != null && ` · ${Math.round(i.confidence * 100)}%`}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="glass" className="flex-1" onClick={() => setConfirmOpen(false)}>
+                  Review
+                </Button>
+                <Button className="flex-1" onClick={doSave} loading={saveMeal.isPending}>
+                  Confirm & Save
+                </Button>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -80,12 +80,14 @@ The full design, API, database, deployment and security notes live in [`docs/`](
 Vision results are reconciled against a curated `food_db` (D1) so reported macros
 come from real nutrition data, not model hallucination.
 
-## Deployment (Cloudflare Pages + Worker)
+## Deployment (single Cloudflare Worker)
+
+NutriAI runs as one Worker that serves both the PWA (static assets) and the
+`/api/*` backend.
 
 1. Build: `npm run build` (outputs to `dist/`).
-2. Deploy the Worker: `cd worker && wrangler deploy` (see `docs/Deployment.md`).
-3. Deploy the PWA: `wrangler pages deploy dist` and set `VITE_API_BASE` to the
-   Worker URL.
+2. Deploy: `npm run deploy` — builds, then `wrangler deploy` from `worker/`
+   (serves `dist/` + the API). No `VITE_API_BASE` needed (same-origin).
 
 Full step-by-step walkthrough: [docs/Deployment.md](./docs/Deployment.md).
 

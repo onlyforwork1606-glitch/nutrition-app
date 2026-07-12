@@ -6,7 +6,7 @@ import {
   COACH_CHAT_PROMPT,
   AI_CONFIG,
 } from "../config";
-import { log } from "../observability";
+import { logger } from "../logger";
 
 export class CoachService {
   private repo: Repo;
@@ -31,14 +31,22 @@ Meals: ${JSON.stringify(ctx.meals ?? [])}`;
     ctxJson?: string,
     history?: { role: "user" | "assistant"; content: string }[]
   ): Promise<CoachResponse> {
-    await this.repo.addCoachMessage(userId, "user", message);
+    try {
+      await this.repo.addCoachMessage(userId, "user", message);
+    } catch (e) {
+      logger.error("d1", e, { op: "addCoachMessage", userId });
+    }
 
     let systemPrompt = `${COACH_SYSTEM_PROMPT}\n${COACH_CHAT_PROMPT}`;
     if (ctxJson) {
       systemPrompt += `\nNUTRITION CONTEXT (use ONLY this data, never estimate from images):\n${ctxJson}`;
     } else {
-      const ctx = await this.repo.buildContext(userId, date);
-      systemPrompt += `\nNUTRITION CONTEXT (today):\n${this.contextBlock(ctx)}`;
+      try {
+        const ctx = await this.repo.buildContext(userId, date);
+        systemPrompt += `\nNUTRITION CONTEXT (today):\n${this.contextBlock(ctx)}`;
+      } catch (e) {
+        logger.error("d1", e, { op: "buildContext", userId });
+      }
     }
 
     const messages = [
@@ -54,8 +62,12 @@ Meals: ${JSON.stringify(ctx.meals ?? [])}`;
       { temperature: AI_CONFIG.coachTemperature, maxTokens: AI_CONFIG.coachMaxTokens },
       requestId
     );
-    await this.repo.addCoachMessage(userId, "assistant", res.content);
-    log("info", "coach_response", { requestId, userId, tokens: res.usage.total_tokens });
+    try {
+      await this.repo.addCoachMessage(userId, "assistant", res.content);
+    } catch (e) {
+      logger.error("d1", e, { op: "addCoachMessage", userId });
+    }
+    logger.info("coach_response", { requestId, userId, tokens: res.usage.total_tokens });
     return { message: res.content };
   }
 
