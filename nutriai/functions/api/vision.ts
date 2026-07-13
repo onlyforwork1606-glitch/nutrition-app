@@ -46,6 +46,14 @@ export const onRequestPost = async (ctx: { request: Request; env: Env }) => {
       temperature: 0.2,
       maxTokens: 1200,
       jsonMode: true,
+      validate: (content) => {
+        try {
+          const p = extractJson(content);
+          return Array.isArray(p?.foods);
+        } catch {
+          return false;
+        }
+      },
     });
 
     const content: string = completion?.choices?.[0]?.message?.content ?? "";
@@ -69,9 +77,10 @@ export const onRequestPost = async (ctx: { request: Request; env: Env }) => {
 
     return Response.json({ foods });
   } catch (e: any) {
-    return Response.json(
-      { error: e?.message ?? "Vision analysis failed." },
-      { status: 502 }
-    );
+    const msg =
+      typeof e?.message === "string" && e.message.includes("does not support image")
+        ? "The AI couldn't read this image. Try a clearer, well-lit photo."
+        : e?.message ?? "Vision analysis failed.";
+    return Response.json({ error: msg }, { status: 502 });
   }
 };

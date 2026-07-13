@@ -12,17 +12,20 @@ export const SITE_URL = "https://nutriai.app";
 export const APP_NAME = "NutriAI";
 
 /** Vision (food recognition) model chain — primary first, then fallbacks.
- *  Both models are confirmed multimodal (accept image_url) on the free tier. */
+ *  All are confirmed multimodal (accept image_url) and free on OpenRouter. */
 export const VISION_MODELS = [
   "nvidia/nemotron-nano-12b-v2-vl:free",
   "google/gemma-4-26b-a4b-it:free",
+  "google/gemma-4-31b-it:free",
 ];
 
-/** Nutrition coach (chat) model chain — primary first, then fallbacks. */
+/** Nutrition coach (chat) model chain — primary first, then fallbacks.
+ *  All are confirmed free on OpenRouter (gemma/nemotron also handle vision). */
 export const COACH_MODELS = [
   "google/gemma-4-26b-a4b-it:free",
+  "google/gemma-4-31b-it:free",
   "nvidia/nemotron-nano-12b-v2-vl:free",
-  "meta-llama/llama-3.3-70b-instruct:free",
+  "openrouter/free",
 ];
 
 export const VISION_PROMPT = `Analyze this meal.
@@ -86,7 +89,15 @@ export async function callOpenRouter(
   apiKey: string,
   models: string[],
   messages: unknown[],
-  opts: { temperature?: number; maxTokens?: number; jsonMode?: boolean }
+  opts: {
+    temperature?: number;
+    maxTokens?: number;
+    jsonMode?: boolean;
+    /** If provided, the model's text response must pass this to be accepted;
+     *  otherwise we fall through to the next model (covers truncated/invalid
+     *  JSON, refusals, or modality errors). */
+    validate?: (content: string) => boolean;
+  }
 ): Promise<any> {
   let lastError: unknown = new Error("All OpenRouter models failed.");
 
@@ -116,7 +127,14 @@ export async function callOpenRouter(
         continue;
       }
 
-      return await res.json();
+      const json = await res.json();
+      const content: string = json?.choices?.[0]?.message?.content ?? "";
+      if (opts.validate && !opts.validate(content)) {
+        lastError = new Error(`Model ${model} returned an unusable response.`);
+        continue;
+      }
+
+      return json;
     } catch (e) {
       lastError = e;
     }

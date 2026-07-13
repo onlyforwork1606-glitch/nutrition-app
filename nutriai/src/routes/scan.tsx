@@ -5,7 +5,7 @@ import { GlassCard, Button, Input, Segmented, Field } from "@/components/ui/prim
 import { useApp } from "@/context/AppProvider";
 import { useSaveMeal } from "@/hooks/data";
 import { AIService, visionResultToItems } from "@/lib/ai";
-import { blobToDataUrl, todayKey, uid, formatNumber } from "@/lib/utils";
+import { blobToDataUrl, compressImage, todayKey, uid, formatNumber } from "@/lib/utils";
 import { MEAL_ORDER, MEAL_LABELS, type MealTypeValue, type FoodItem } from "@/lib/types";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -31,7 +31,9 @@ export function ScanPage() {
     setItems([]);
     setAnalyzing(true);
     try {
-      const result = await AIService.analyzeFoodImage(url);
+      const optimized = await compressImage(url, 1024, 0.82);
+      setImage(optimized);
+      const result = await AIService.analyzeFoodImage(optimized);
       setItems(visionResultToItems(result));
     } catch (e: any) {
       setError(e.message ?? "Could not analyze image.");

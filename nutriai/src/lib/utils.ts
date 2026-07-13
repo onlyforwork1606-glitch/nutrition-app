@@ -58,6 +58,41 @@ export function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([arr], { type: mime });
 }
 
+/**
+ * Downscale + re-encode an image data URL so it is small enough to send to the
+ * vision model quickly. Real camera photos are several MB as base64; this keeps
+ * the request tiny and avoids timeouts / truncated responses from the model.
+ */
+export function compressImage(
+  dataUrl: string,
+  maxDim = 1024,
+  quality = 0.82
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const scale = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve(dataUrl);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => reject(new Error("Could not read image."));
+    img.src = dataUrl;
+  });
+}
+
 export function estimateBMI(weightKg: number, heightCm: number): number {
   if (!heightCm) return 0;
   const m = heightCm / 100;
