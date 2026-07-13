@@ -19,7 +19,7 @@ function toAIError(e: unknown): AIError {
 }
 
 export const AIService = {
-  /** Vision: analyze a food image via the Worker (server calls OpenRouter). */
+  /** Vision: analyze a food image via Pages Functions (server calls OpenRouter). */
   async analyzeFoodImage(
     imageDataUrl: string,
     signal?: AbortSignal
@@ -73,10 +73,10 @@ export const AIService = {
     signal?: AbortSignal
   ): Promise<string> {
     try {
-      const data = await apiClient.coachChat(message, contextJson, history, signal);
+      const data = await apiClient.chat(message, contextJson, history, signal);
       return data.message;
     } catch (e) {
-      logger.aiFailure("qwen-coach", e);
+      logger.aiFailure("gemma-coach", e);
       throw toAIError(e);
     }
   },

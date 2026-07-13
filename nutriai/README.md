@@ -11,8 +11,8 @@ coach. Works fully offline (data stored in your browser) and installs as a PWA.
 - **UI:** shadcn-style glassmorphism components, Framer Motion, lucide icons
 - **Routing:** TanStack Router · **Data:** TanStack Query
 - **Charts:** Recharts · **3D:** Three.js (`@react-three/fiber` + `drei`)
-- **Storage:** IndexedDB (`idb`) + localStorage-style KV
-- **AI:** OpenRouter (`gemma-4-26b` vision + `qwen3-next-80b` coach)
+- **Storage:** IndexedDB (`idb`) — all your data lives in your browser
+- **AI:** OpenRouter via Cloudflare Pages Functions (key stays server-side)
 - **Deploy:** Cloudflare Pages · **PWA:** installable, offline, auto-update
 
 ## Getting started
@@ -22,77 +22,71 @@ npm install
 npm run dev
 ```
 
-The app runs fully client-side against the OpenRouter **key stored on the
-Worker**. For local development, point it at a local Worker via
-`VITE_API_BASE=http://localhost:8787` (see `docs/Deployment.md`).
-
-Open http://localhost:5173.
-
-### OpenRouter key (server-side only)
-
-The OpenRouter key is a **secret managed by the Cloudflare Worker** and is
-**never** exposed to the browser. It is set with
-`wrangler secret put OPENROUTER_API_KEY` (see `docs/Deployment.md`). The frontend
-talks only to the Worker API (`/api/vision`, `/api/coach`, …); the Worker calls
-OpenRouter with the key. No `VITE_`-prefixed key exists in the client bundle.
+Open http://localhost:5173. The app runs fully client-side. The only server-side
+logic is a thin Cloudflare Pages Functions layer that proxies AI calls to
+OpenRouter (so your API key never reaches the browser).
 
 ## Scripts
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Dev server |
-| `npm run build` | Type-check + production build |
+| `npm run dev` | Dev server (static PWA) |
+| `npm run build` | Type-check + production build → `dist/` |
 | `npm run preview` | Preview the production build |
-| `npm run deploy` | Deploy `dist/` to Cloudflare Pages |
+| `npm run lint` | ESLint |
+| `npm run test` | Vitest |
+| `npm run typecheck` | `tsc` type-check |
 
 ## Architecture
 
-The app is a client-first PWA backed by a Cloudflare-native serverless API. The
-browser never talks to OpenRouter directly.
+A **static Cloudflare Pages site** (the React PWA) plus **Pages Functions**
+(`functions/api/*`) that only proxy to OpenRouter. The browser never talks to
+OpenRouter directly and never sees the API key.
 
 ```
-nutriai/                 React PWA (this repo)
-  src/lib/api.ts         apiClient — calls the Worker API (/api/*)
-  src/lib/ai.ts          AIService — proxies vision + coach to the Worker
-  src/lib/db.ts          IndexedDB (offline-first local cache)
-  worker/                Cloudflare Worker (Hono)
-    src/index.ts         routes + scheduled reports
-    src/middleware.ts    auth (signed cookie), rate limit (KV), security headers
-    src/services/        openrouter, nutrition, coach, db (D1)
-    migrations/          D1 schema
+nutriai/
+  src/                     React PWA
+    lib/api.ts             apiClient — calls the Pages Functions (/api/*)
+    lib/ai.ts              AIService — vision + coach helpers
+    lib/db.ts              IndexedDB (offline-first local store)
+    routes/                pages (scan, diary, progress, coach, settings)
+  functions/
+    api/_openrouter.ts     shared OpenRouter client + prompts (not a route)
+    api/vision.ts          POST /api/vision  → food recognition
+    api/chat.ts            POST /api/chat    → nutrition coach
+    api/health.ts          GET  /api/health  → key-availability check
 ```
 
-The full design, API, database, deployment and security notes live in [`docs/`](./docs):
+### AI models (configurable in `functions/api/_openrouter.ts`)
 
-- [Architecture](./docs/Architecture.md)
-- [API](./docs/API.md)
-- [Database](./docs/Database.md)
-- [Deployment](./docs/Deployment.md)
-- [Security](./docs/Security.md)
+- **Vision** — `google/gemma-4-26b-a4b-it:free` — food recognition + macro
+  estimation. Falls back to `nvidia/nemotron-nano-12b-v2-vl:free`.
+- **Coach** — `google/gemma-4-26b-a4b-it:free` — daily/weekly/monthly coaching
+  + chat. Falls back to `nvidia/nemotron-nano-12b-v2-vl:free` then
+  `meta-llama/llama-3.3-70b-instruct:free`.
 
-### AI models (configurable in `worker/src/config.ts` and `src/lib/constants.ts`)
+## Deployment (Cloudflare Pages — GitHub integration)
 
-- **Vision** — `google/gemma-4-26b-a4b-it:free` — food recognition + macro estimation.
-  Falls back to `nvidia/nemotron-nano-12b-v2-vl:free`.
-- **Coach** — `google/gemma-4-26b-a4b-it:free` — daily/weekly/monthly coaching + chat.
-  Falls back to `nvidia/nemotron-nano-12b-v2-vl:free` then `meta-llama/llama-3.3-70b-instruct:free`.
+Requires **exactly one** environment variable: `OPENROUTER_API_KEY`.
 
-Vision results are reconciled against a curated `food_db` (D1) so reported macros
-come from real nutrition data, not model hallucination.
+1. Push this repo to GitHub.
+2. In the Cloudflare Dashboard, create a **Pages** project and connect the repo.
+3. Build settings:
+   - **Build command:** `npm run build` (run in the `nutriai/` directory, or set
+     the project root to `nutriai/`)
+   - **Build output directory:** `dist`
+4. Add the environment variable `OPENROUTER_API_KEY` (your key from
+   https://openrouter.ai/keys) under **Settings → Environment variables** (both
+   Production and Preview).
+5. Save & deploy. Pages builds and deploys automatically on every push — no
+   Wrangler or extra tooling required.
 
-## Deployment (single Cloudflare Worker)
-
-NutriAI runs as one Worker that serves both the PWA (static assets) and the
-`/api/*` backend.
-
-1. Build: `npm run build` (outputs to `dist/`).
-2. Deploy: `npm run deploy` — builds, then `wrangler deploy` from `worker/`
-   (serves `dist/` + the API). No `VITE_API_BASE` needed (same-origin).
-
-Full step-by-step walkthrough: [docs/Deployment.md](./docs/Deployment.md).
+The `functions/` folder is detected automatically by Pages; the API routes
+(`/api/vision`, `/api/chat`, `/api/health`) are served from the same origin as
+the static site.
 
 ## Features
 
 Home · Scan (camera/gallery → AI) · Diary (edit/delete, water tracker, quick-add)
 · Progress (calorie/protein/weight charts, macro pie, weight prediction)
-· Settings (goals, API key, export/import) · Floating AI Coach · PWA.
+· Settings (goals, export/import) · Floating AI Coach · PWA (installable, offline).

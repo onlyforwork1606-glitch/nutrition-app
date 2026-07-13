@@ -34,7 +34,6 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<AppUser | null>(null);
   const [aiOnline, setAiOnline] = useState(true);
 
   const settingsQ = useQuery({
@@ -46,15 +45,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     queryFn: getGoals,
   });
 
-  // Resolve the server-managed auth session + AI availability on load.
+  // Resolve the server-managed AI availability on load.
   useEffect(() => {
     (async () => {
       try {
-        const [session, health] = await Promise.all([
-          apiClient.session().catch(() => null),
-          apiClient.health().catch(() => null),
-        ]);
-        if (session?.user) setUser(session.user);
+        const health = await apiClient.health().catch(() => null);
         if (health) setAiOnline(health.hasOpenRouterKey);
       } catch {
         /* offline or unreachable — AI features degrade gracefully */
@@ -90,7 +85,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updateGoals,
         ready,
         hasKey,
-        user,
+        user: null,
         aiOnline,
       }}
     >

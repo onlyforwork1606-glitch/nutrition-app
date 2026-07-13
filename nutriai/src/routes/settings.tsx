@@ -111,7 +111,7 @@ export function SettingsPage() {
         <p className="text-[11px] text-white/40">
           The OpenRouter key is managed securely on the NutriAI server — it never
           touches your browser. Food recognition and the AI coach run through our
-          Cloudflare Worker.
+          Cloudflare Pages Functions.
         </p>
         <AIStatus />
       </GlassCard>

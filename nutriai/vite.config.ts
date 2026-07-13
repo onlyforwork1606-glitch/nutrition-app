@@ -55,6 +55,9 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  // The app is a static PWA deployed to Cloudflare Pages. The only server-side
+  // logic lives in Pages Functions (functions/api/*), which run on Cloudflare's
+  // edge — there is no separate Worker to proxy to during local `npm run dev`.
   build: {
     target: "es2022",
     sourcemap: false,

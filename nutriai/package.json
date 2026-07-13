@@ -4,14 +4,10 @@
   "version": "1.0.0",
   "type": "module",
   "description": "NutriAI — Snap. Eat. Track. AI-powered calorie & nutrition tracking.",
-  "workspaces": [
-    "worker"
-  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy --config worker/wrangler.toml",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
     "test": "vitest run"
@@ -36,7 +32,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@sentry/react": "^8.42.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^26.1.1",
     "@types/react": "^18.3.12",

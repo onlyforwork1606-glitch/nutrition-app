@@ -1,24 +1,16 @@
-import * as Sentry from "@sentry/react";
+/**
+ * Lightweight frontend logger. Mirrors to the console and records API latency.
+ * (Sentry was removed during the Cloudflare Pages simplification — no extra
+ * environment variables are required.)
+ */
 
 let enabled = false;
 
-/** Initialize Sentry. Only runs in production with a configured DSN. */
 export function initLogger() {
-  const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
-  if (dsn && import.meta.env.PROD) {
-    Sentry.init({
-      dsn,
-      environment: import.meta.env.MODE,
-      tracesSampleRate: 0.1,
-    });
-    enabled = true;
-  }
+  // No-op: there is no external error backend in the Pages deployment.
+  enabled = false;
 }
 
-/**
- * Reusable logging service for the frontend. Mirrors to the console and, when
- * Sentry is enabled (production only), forwards errors / breadcrumbs.
- */
 export const logger = {
   isEnabled: () => enabled,
 
@@ -33,11 +25,6 @@ export const logger = {
   error(scope: string, err: unknown, extra?: Record<string, unknown>) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`[error:${scope}] ${message}`, extra ?? "");
-    if (enabled) {
-      Sentry.captureException(err instanceof Error ? err : new Error(message), {
-        extra: { scope, ...extra },
-      });
-    }
   },
 
   /** Capture a failed AI (OpenRouter) request originating from the client. */
@@ -45,10 +32,10 @@ export const logger = {
     this.error("ai", err, { model, ...extra });
   },
 
-  /** Record API call latency (ms) as a Sentry breadcrumb. */
+  /** Record API call latency (ms). */
   apiLatency(path: string, ms: number) {
     if (enabled) {
-      Sentry.addBreadcrumb({ category: "api", message: path, data: { ms } });
+      console.debug(`[api:latency] ${path} ${ms}ms`);
     }
   },
 };

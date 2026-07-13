@@ -2,8 +2,8 @@ name: CI
 
 # Lint + typecheck + test + build on every push.
 # Deployment is handled by the Cloudflare Dashboard's Git integration
-# (see docs/Cloudflare-Deployment.md) — it builds and deploys automatically
-# after a successful push, so there is no separate deploy job here.
+# (see README) — it builds and deploys automatically after a successful
+# push, so there is no separate deploy job here.
 
 on:
   push:
@@ -36,12 +36,6 @@ jobs:
 
       - name: Test
         run: npm test
-
-      - name: Worker typecheck
-        run: npm run typecheck --workspace nutriai-worker
-
-      - name: Worker tests
-        run: npm run test --workspace nutriai-worker
 
       - name: Build
         run: npm run build
