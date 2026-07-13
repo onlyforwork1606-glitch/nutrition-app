@@ -11,10 +11,11 @@ export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 export const SITE_URL = "https://nutriai.app";
 export const APP_NAME = "NutriAI";
 
-/** Vision (food recognition) model chain — primary first, then fallbacks. */
+/** Vision (food recognition) model chain — primary first, then fallbacks.
+ *  Both models are confirmed multimodal (accept image_url) on the free tier. */
 export const VISION_MODELS = [
-  "google/gemma-4-26b-a4b-it:free",
   "nvidia/nemotron-nano-12b-v2-vl:free",
+  "google/gemma-4-26b-a4b-it:free",
 ];
 
 /** Nutrition coach (chat) model chain — primary first, then fallbacks. */
